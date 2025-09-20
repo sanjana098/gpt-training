@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Usage: ./scripts/launch_torchrun.sh <nnodes> <nproc_per_node> <rdzv_endpoint_host:port> [extra_args]
+# Usage: ./scripts/launch_torchrun.sh <nnodes> <nproc_per_node> <rdzv_endpoint_host:port> [rdzv_id] [extra_args]
 
 NNODES=${1:-2}
 NPER=${2:-4}
 RDZV=${3:-"127.0.0.1:29400"}
-shift 3 || true
+RDZV_ID=${4:-"gpt2_run"}
+shift 4 || true
 
 export OMP_NUM_THREADS=8
 export NCCL_DEBUG=INFO
@@ -22,5 +23,6 @@ torchrun \
   --nproc_per_node $NPER \
   --rdzv_backend c10d \
   --rdzv_endpoint $RDZV \
+  --rdzv_id $RDZV_ID \
   --max_restarts 3 \
   src/scripts/train.py --config configs/config.yaml "$@"

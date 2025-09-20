@@ -1,5 +1,5 @@
 strategy: fsdp
-precision: bf16-mixed
+precision: 16-mixed
 fsdp:
   sharding_strategy: FULL_SHARD
   use_orig_params: true

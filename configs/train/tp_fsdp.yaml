@@ -1,5 +1,5 @@
 strategy: tp_fsdp
-precision: bf16-mixed
+precision: 16-mixed
 parallel:
   tp_size: 2
   dp_size: null   # inferred from world_size / tp_size
