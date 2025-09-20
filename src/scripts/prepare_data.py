@@ -1,5 +1,13 @@
 import argparse
 import os
+import sys
+from pathlib import Path
+
+# Ensure 'src' is on sys.path when running as a script
+THIS_DIR = Path(__file__).resolve().parent
+SRC_ROOT = THIS_DIR.parent
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
 
 from data_core.pile_prep import PilePrepConfig, prepare_and_upload
 

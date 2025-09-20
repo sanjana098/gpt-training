@@ -12,7 +12,7 @@ pip install -r requirements.txt
 
 2. Prepare data shards to S3 (The Pile → tokenized, packed, sharded):
 ```bash
-python -m src.scripts.prepare_data --bucket gpt_data --region us-east-2 \
+python src/scripts/prepare_data.py --bucket gpt_data --region us-east-2 \
   --seq_len 1024 --num_tokens 2500000000 --shard_tokens 20000000 --tokenizer gpt2
 ```
 
