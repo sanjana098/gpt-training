@@ -21,7 +21,7 @@ class PilePrepConfig:
     shard_num_tokens: int
     val_fraction: float
     tokenizer_name: str = "gpt2"
-    dataset_name: str = "the_pile"
+    dataset_name: str = "monology/pile-uncopyrighted"
     local_cache_dir: str = "/tmp/pile_prep"
     prefix: str = "data/the_pile"
 
