@@ -1,0 +1,15 @@
+strategy: tp_fsdp
+precision: bf16-mixed
+parallel:
+  tp_size: 2
+  dp_size: null   # inferred from world_size / tp_size
+fsdp:
+  sharding_strategy: FULL_SHARD
+  use_orig_params: true
+  cpu_offload: false
+  activation_checkpointing: true
+accumulate_grad_batches: 1
+max_steps: null
+log_every_n_steps: 50
+val_check_interval: 5000
+gradient_clip_val: 1.0

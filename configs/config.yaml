@@ -1,0 +1,9 @@
+defaults:
+  - model: gpt2_124m
+  - data: pile_seq1024
+  - train: tp_fsdp
+  - aws: ec2
+  - exp: default
+
+seed: 42
+run_name: gpt2_124m_pile
