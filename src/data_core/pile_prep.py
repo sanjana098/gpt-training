@@ -8,7 +8,6 @@ from typing import Iterable, List, Tuple
 import boto3
 import numpy as np
 from datasets import load_dataset
-from tokenizers import Tokenizer
 from transformers import AutoTokenizer
 from tqdm import tqdm
 
@@ -54,6 +53,17 @@ def upload_to_s3(s3, bucket: str, key: str, data: bytes) -> None:
     s3.put_object(Bucket=bucket, Key=key, Body=data)
 
 
+def _encode_to_ids(tok: AutoTokenizer, text: str) -> List[int]:
+    # Prefer transformers' encode which returns List[int]
+    obj = tok.encode(text, add_special_tokens=False)
+    if isinstance(obj, list):
+        return obj
+    # Fallback if using tokenizers.Tokenizer
+    if hasattr(obj, "ids"):
+        return list(getattr(obj, "ids"))
+    return list(obj)
+
+
 def prepare_and_upload(cfg: PilePrepConfig, num_tokens_target: int) -> None:
     os.makedirs(cfg.local_cache_dir, exist_ok=True)
     s3 = boto3.client("s3", region_name=cfg.region)
@@ -68,7 +78,7 @@ def prepare_and_upload(cfg: PilePrepConfig, num_tokens_target: int) -> None:
     train_manifest = []
 
     for text in tqdm(iter_documents(cfg.dataset_name), desc="tokenizing"):
-        ids = tok.encode(text).ids
+        ids = _encode_to_ids(tok, text)
         tokens_buffer.extend(ids)
         while len(tokens_buffer) >= shard_tokens_target:
             shard_ids = tokens_buffer[:shard_tokens_target]
