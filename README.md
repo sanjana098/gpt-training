@@ -7,7 +7,11 @@ This repository contains a modular pipeline to pretrain GPT-2 124M on The Pile u
 1. Install dependencies:
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
+# For local data prep (CPU ok):
 pip install -r requirements.txt
+# For GPU training on EC2/Linux:
+# pip install -r requirements-train.txt
+# Or follow PyTorch install: https://pytorch.org/get-started/locally/
 ```
 
 2. Prepare data shards to S3 (The Pile → tokenized, packed, sharded):

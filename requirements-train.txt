@@ -1,0 +1,11 @@
+# Use this on GPU instances (Linux) where torch/cu packages are available
+# For Apple Silicon (macOS), install torch separately: https://pytorch.org/get-started/locally/
+
+# Core
+torch>=2.2.0
+pytorch-lightning>=2.2.0
+
+einops>=0.7.0
+torchmetrics>=1.4.0
+
+deepspeed>=0.13.0
