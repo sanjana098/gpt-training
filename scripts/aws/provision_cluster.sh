@@ -72,12 +72,13 @@ if [[ "$SG_ID" == "None" || -z "$SG_ID" ]]; then
   echo "Creating security group $SG_NAME in $VPC_ID"
   SG_ID=$(AWS ec2 create-security-group --group-name "$SG_NAME" --description "GPT2 training SG" --vpc-id "$VPC_ID" --query 'GroupId' --output text)
   # Egress all
-  AWS ec2 authorize-security-group-egress --group-id "$SG_ID" --ip-permissions IpProtocol=-1,IpRanges='[{CidrIp=0.0.0.0/0}]'
+  # Many accounts have default "allow all egress"; ignore duplicate errors
+  AWS ec2 authorize-security-group-egress --group-id "$SG_ID" --ip-permissions IpProtocol=-1,IpRanges='[{CidrIp=0.0.0.0/0}]' || true
   # SSH from caller IP
   MY_IP=$(curl -s https://checkip.amazonaws.com || echo "0.0.0.0")
-  AWS ec2 authorize-security-group-ingress --group-id "$SG_ID" --ip-permissions IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges="[{CidrIp=${MY_IP}/32,Description=ssh}]"
+  AWS ec2 authorize-security-group-ingress --group-id "$SG_ID" --ip-permissions IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges="[{CidrIp=${MY_IP}/32,Description=ssh}]" || true
   # NCCL/torchrun rendezvous port from within VPC only
-  AWS ec2 authorize-security-group-ingress --group-id "$SG_ID" --ip-permissions IpProtocol=tcp,FromPort=29400,ToPort=29400,IpRanges="[{CidrIp=${VPC_CIDR},Description=rdzv}]"
+  AWS ec2 authorize-security-group-ingress --group-id "$SG_ID" --ip-permissions IpProtocol=tcp,FromPort=29400,ToPort=29400,IpRanges="[{CidrIp=${VPC_CIDR},Description=rdzv}]" || true
 else
   echo "Using existing security group $SG_ID"
 fi
@@ -138,11 +139,9 @@ INSTANCE_IDS=( $RUN_OUT )
 AWS ec2 wait instance-running --instance-ids "${INSTANCE_IDS[@]}"
 
 # Fetch IPs
-DESC=$(AWS ec2 describe-instances --instance-ids "${INSTANCE_IDS[@]}")
-PUBS=$(echo "$DESC" | jq -r '.Reservations[].Instances[].PublicIpAddress')
-PRIVS=$(echo "$DESC" | jq -r '.Reservations[].Instances[].PrivateIpAddress')
-
-paste <(echo "$PUBS") <(echo "$PRIVS") <(printf "%s\n" "${INSTANCE_IDS[@]}") > cluster_hosts.txt
+AWS ec2 describe-instances --instance-ids "${INSTANCE_IDS[@]}" \
+  --query 'Reservations[].Instances[].{Public:PublicIpAddress,Private:PrivateIpAddress,Id:InstanceId}' \
+  --output text > cluster_hosts.txt
 
 echo "\nCluster hosts written to cluster_hosts.txt (public_ip private_ip instance_id):"
 cat cluster_hosts.txt
