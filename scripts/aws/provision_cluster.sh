@@ -22,6 +22,8 @@ SG_NAME="gpt2-sg"
 TAG_PREFIX="gpt2-train"
 COUNT=2
 INST_TYPE="g5.12xlarge"
+AMI_ID_OVERRIDE=""
+MARKET="spot"  # spot | on-demand
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -32,6 +34,9 @@ while [[ $# -gt 0 ]]; do
     --profile-name) PROFILE_NAME="$2"; shift 2 ;;
     --sg-name) SG_NAME="$2"; shift 2 ;;
     --tag) TAG_PREFIX="$2"; shift 2 ;;
+    --count) COUNT="$2"; shift 2 ;;
+    --market) MARKET="$2"; shift 2 ;;
+    --ami-id) AMI_ID_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
@@ -111,28 +116,95 @@ if ! aws iam get-instance-profile --instance-profile-name "$PROFILE_NAME" >/dev/
   aws iam add-role-to-instance-profile --instance-profile-name "$PROFILE_NAME" --role-name "$ROLE_NAME" >/dev/null || true
 fi
 
-# Find latest DLAMI (Ubuntu 22.04)
-AMI_ID=$(AWS ec2 describe-images \
-  --owners 898082745236 \
-  --filters Name=name,Values='Deep Learning AMI GPU PyTorch *Ubuntu 22.04*' Name=state,Values=available \
-  --query 'Images | sort_by(@, &CreationDate)[-1].ImageId' --output text)
+find_dlami() {
+  # Try multiple patterns/owners to locate a recent DLAMI GPU PyTorch Ubuntu image
+  local ami
+  # Owner: AWS DLAMI account
+  ami=$(AWS ec2 describe-images \
+    --owners 898082745236 \
+    --filters Name=name,Values='Deep Learning AMI GPU PyTorch *Ubuntu*' Name=state,Values=available \
+    --query 'Images | sort_by(@, &CreationDate)[-1].ImageId' --output text)
+  if [[ "$ami" != "None" && -n "$ami" ]]; then echo "$ami"; return; fi
+  # Owner: amazon shortcut
+  ami=$(AWS ec2 describe-images \
+    --owners amazon \
+    --filters Name=name,Values='Deep Learning AMI GPU PyTorch *Ubuntu*' Name=state,Values=available \
+    --query 'Images | sort_by(@, &CreationDate)[-1].ImageId' --output text)
+  if [[ "$ami" != "None" && -n "$ami" ]]; then echo "$ami"; return; fi
+  # Base DLAMI GPU if PyTorch-specific not found
+  ami=$(AWS ec2 describe-images \
+    --owners 898082745236 \
+    --filters Name=name,Values='Deep Learning Base AMI GPU *Ubuntu*' Name=state,Values=available \
+    --query 'Images | sort_by(@, &CreationDate)[-1].ImageId' --output text)
+  if [[ "$ami" != "None" && -n "$ami" ]]; then echo "$ami"; return; fi
+  echo "None"
+}
+
+if [[ -n "$AMI_ID_OVERRIDE" ]]; then
+  AMI_ID="$AMI_ID_OVERRIDE"
+else
+  AMI_ID=$(find_dlami)
+fi
 if [[ "$AMI_ID" == "None" || -z "$AMI_ID" ]]; then
-  echo "Failed to find a suitable Deep Learning AMI in $REGION" >&2
+  echo "Failed to find a suitable Deep Learning AMI in $REGION. Provide --ami-id to override." >&2
   exit 1
 fi
+echo "Using AMI $AMI_ID"
 
-echo "Launching $COUNT x $INST_TYPE with AMI $AMI_ID in $REGION..."
-RUN_OUT=$(AWS ec2 run-instances \
-  --image-id "$AMI_ID" \
-  --instance-type "$INST_TYPE" \
-  --count $COUNT \
-  --key-name "$KEY_NAME" \
-  --security-group-ids "$SG_ID" \
-  --iam-instance-profile Name="$PROFILE_NAME" \
-  --instance-market-options MarketType=spot \
-  --instance-initiated-shutdown-behavior terminate \
-  --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$TAG_PREFIX}]" \
-  --query 'Instances[].InstanceId' --output text)
+echo "Launching $COUNT x $INST_TYPE with AMI $AMI_ID in $REGION (market=$MARKET)..."
+
+set +e
+if [[ "$MARKET" == "spot" ]]; then
+  RUN_OUT=$(AWS ec2 run-instances \
+    --image-id "$AMI_ID" \
+    --instance-type "$INST_TYPE" \
+    --count $COUNT \
+    --key-name "$KEY_NAME" \
+    --security-group-ids "$SG_ID" \
+    --iam-instance-profile Name="$PROFILE_NAME" \
+    --instance-market-options MarketType=spot \
+    --instance-initiated-shutdown-behavior terminate \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$TAG_PREFIX}]" \
+    --query 'Instances[].InstanceId' --output text 2> /tmp/run_err.txt)
+  RC=$?
+  if [[ $RC -ne 0 ]]; then
+    ERRMSG=$(cat /tmp/run_err.txt)
+    echo "Spot launch failed: $ERRMSG" >&2
+    echo "Falling back to on-demand for this run..." >&2
+    RUN_OUT=$(AWS ec2 run-instances \
+      --image-id "$AMI_ID" \
+      --instance-type "$INST_TYPE" \
+      --count $COUNT \
+      --key-name "$KEY_NAME" \
+      --security-group-ids "$SG_ID" \
+      --iam-instance-profile Name="$PROFILE_NAME" \
+      --instance-initiated-shutdown-behavior terminate \
+      --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$TAG_PREFIX}]" \
+      --query 'Instances[].InstanceId' --output text)
+    RC=$?
+    if [[ $RC -ne 0 ]]; then
+      echo "On-demand launch also failed. Consider using --count 1 or a different instance type/region." >&2
+      exit 1
+    fi
+  fi
+else
+  RUN_OUT=$(AWS ec2 run-instances \
+    --image-id "$AMI_ID" \
+    --instance-type "$INST_TYPE" \
+    --count $COUNT \
+    --key-name "$KEY_NAME" \
+    --security-group-ids "$SG_ID" \
+    --iam-instance-profile Name="$PROFILE_NAME" \
+    --instance-initiated-shutdown-behavior terminate \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$TAG_PREFIX}]" \
+    --query 'Instances[].InstanceId' --output text)
+  RC=$?
+  if [[ $RC -ne 0 ]]; then
+    echo "On-demand launch failed. Consider using --count 1 or spot." >&2
+    exit 1
+  fi
+fi
+set -e
 INSTANCE_IDS=( $RUN_OUT )
 
 # Wait until running
