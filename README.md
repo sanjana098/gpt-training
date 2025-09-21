@@ -16,9 +16,14 @@ pip install -r requirements.txt
 
 2. Prepare data shards to S3 (The Pile → tokenized, packed, sharded):
 ```bash
-python src/scripts/prepare_data.py --bucket gpt_data --region us-east-2 \
-  --seq_len 1024 --num_tokens 2500000000 --shard_tokens 20000000 --tokenizer gpt2
+# Uses defaults from configs/data/pile_seq1024.yaml
+python src/scripts/prepare_data.py --data-config configs/data/pile_seq1024.yaml
+
+# Optionally override just the bucket at runtime
+python src/scripts/prepare_data.py --data-config configs/data/pile_seq1024.yaml \
+  --bucket <your-valid-s3-bucket>
 ```
+Note: Set `bucket`/`region` in `configs/data/pile_seq1024.yaml` or override via CLI. S3 bucket names must use only lowercase letters, numbers, and hyphens.
 
 3. Configure training strategy in `configs/train/*.yaml`. Default is `tp_fsdp` with `tp_size=2`.
 
