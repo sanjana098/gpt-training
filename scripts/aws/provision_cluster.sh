@@ -36,6 +36,7 @@ while [[ $# -gt 0 ]]; do
     --tag) TAG_PREFIX="$2"; shift 2 ;;
     --count) COUNT="$2"; shift 2 ;;
     --market) MARKET="$2"; shift 2 ;;
+    --instance-type) INST_TYPE="$2"; shift 2 ;;
     --ami-id) AMI_ID_OVERRIDE="$2"; shift 2 ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
@@ -61,6 +62,29 @@ if [[ "$VPC_ID" == "None" || -z "$VPC_ID" ]]; then
   exit 1
 fi
 VPC_CIDR=$(AWS ec2 describe-vpcs --vpc-ids "$VPC_ID" --query 'Vpcs[0].CidrBlock' --output text)
+
+# Preflight: check vCPU quota for selected instance type and count
+get_instance_vcpus() {
+  AWS ec2 describe-instance-types --instance-types "$1" --query 'InstanceTypes[0].VCpuInfo.DefaultVCpus' --output text 2>/dev/null || echo 0
+}
+REQUESTED_VCPUS=$(( COUNT * $(get_instance_vcpus "$INST_TYPE") ))
+if [[ "$REQUESTED_VCPUS" -le 0 ]]; then
+  echo "Warning: could not determine vCPU count for $INST_TYPE; skipping quota preflight" >&2
+else
+  if [[ "$MARKET" == "spot" ]]; then
+    QUOTA_CODE="L-3819A6DF"  # Running Spot G and VT instances - vCPU
+  else
+    QUOTA_CODE="L-1216C47A"  # Running On-Demand G and VT instances - vCPU
+  fi
+  QUOTA=$(aws service-quotas get-service-quota --service-code ec2 --quota-code "$QUOTA_CODE" --query 'Quota.Value' --output text 2>/dev/null || echo "NA")
+  if [[ "$QUOTA" != "NA" ]]; then
+    echo "Requested vCPUs: $REQUESTED_VCPUS, Quota ($MARKET G/VT vCPU): $QUOTA"
+    awk_check=$(awk -v a="$REQUESTED_VCPUS" -v b="$QUOTA" 'BEGIN{if(a>b) print 1; else print 0;}')
+    if [[ "$awk_check" -eq 1 ]]; then
+      echo "Quota insufficient. Reduce --count or request quota increase at https://console.aws.amazon.com/servicequotas/home/services/ec2/quotas (code $QUOTA_CODE)." >&2
+    fi
+  fi
+fi
 
 # Create or reuse key pair
 if ! AWS ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then

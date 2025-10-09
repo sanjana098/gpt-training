@@ -1,11 +1,11 @@
 region: us-east-2
-bucket: gpt_data
+bucket: sanj-gpt-data
 instance_type: g5.12xlarge
 num_nodes: 2
 num_gpus_per_node: 4
 use_spot: true
 availability_zone: null
-s3_checkpoint_prefix: s3://gpt_data/checkpoints/gpt2_124m_pile/
+s3_checkpoint_prefix: s3://sanj-gpt-data/checkpoints/gpt2_124m_pile/
 network:
   enable_efa: false
   security_group_ids: []
